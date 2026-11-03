@@ -73,5 +73,16 @@ $preview_session = array( 'analysis' => $analysis, 'plan' => $plan, 'revision' =
 ll_native_assert( $preview['drafts']['single']['content'] === Letterlift_Plan::content( Letterlift_Plan::blocks( $analysis, $plan, 'single' ) ), 'Preview and draft creation use identical serialization rules.' );
 ll_native_assert( str_contains( $preview['drafts']['single']['html'], 'wp-block-image' ) && str_contains( $preview['drafts']['single']['html'], '<figcaption' ), 'Rendered preview includes native image/caption markup.' );
 ll_native_assert( count( $preview['drafts']['single']['warnings'] ) === 2, 'Fallback warnings are exposed with the corresponding preview.' );
+$centered = ( new Letterlift_Parser() )->analyze( file_get_contents( __DIR__ . '/fixtures/centered-legacy.html' ), 'https://mailchi.mp/centered-legacy-fixture' );
+$cases['centered-legacy'] = Letterlift_Plan::content( $centered['blocks'] );
+$centered_types = array_column( ll_native_flat( parse_blocks( $cases['centered-legacy'] ) ), 'blockName' );
+ll_native_assert( count( $centered['blocks'] ) === 9, 'Centered legacy newsletter produces separate preheader, headings, paragraphs, and images.' );
+ll_native_assert( count( $centered['sections'] ) === 3 && count( $centered['images'] ) === 2, 'Wrapper traversal preserves section boundaries and both images.' );
+ll_native_assert( count( array_filter( $centered_types, static fn( $type ) => $type === 'core/paragraph' ) ) === 5, 'Every editorial paragraph is independently editable, including nested span/font wrappers.' );
+ll_native_assert( count( array_filter( $centered_types, static fn( $type ) => $type === 'core/image' ) ) === 2, 'Empty legacy image-link titles do not force image HTML fallbacks.' );
+ll_native_assert( ! in_array( 'core/html', $centered_types, true ) && ! in_array( 'core/table', $centered_types, true ), 'Email wrappers do not become whole-newsletter HTML or data-table blocks.' );
+ll_native_assert( ! $centered['warnings'] && ! str_contains( $cases['centered-legacy'], '&lt;!--' ), 'Template comments do not create literal delimiter artifacts or false text-loss warnings.' );
+$centered_text = implode( ' ', array_column( $centered['blocks'], 'text' ) );
+ll_native_assert( str_contains( $centered_text, 'Final original paragraph with inline words kept together.' ), 'Inline phrasing remains together while structural descendants are traversed.' );
 $path = getenv( 'LETTERLIFT_GUTENBERG_CASES' ); if ( $path ) { file_put_contents( $path, wp_json_encode( array( 'wordpress' => get_bloginfo( 'version' ), 'cases' => $cases ), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) ); }
 echo 'PASS: ' . $ll_serializer_assertions . " serializer assertions on WordPress " . get_bloginfo( 'version' ) . "\n";

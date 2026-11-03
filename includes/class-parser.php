@@ -7,6 +7,8 @@ final class Letterlift_Parser {
     private array $images = array();
     private string $base = '';
     private DOMDocument $dom;
+    private DOMXPath $xpath;
+    private const STRUCTURAL_TAGS = array( 'p','div','center','table','tr','td','th','tbody','thead','tfoot','h1','h2','h3','h4','h5','h6','ul','ol','blockquote','figure','figcaption','hr','section','article','header','footer','main','pre','dl','iframe','object','embed','video','audio','svg','canvas','form' );
     public static function allowed(): array {
         return array(
             'p' => array(), 'br' => array(), 'strong' => array(), 'b' => array(), 'em' => array(), 'i' => array(), 'u' => array(), 's' => array(),
@@ -28,7 +30,7 @@ final class Letterlift_Parser {
         $loaded = $this->dom->loadHTML( '<?xml encoding="utf-8" ?>' . $html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
         libxml_clear_errors(); libxml_use_internal_errors( $previous );
         if ( ! $loaded ) { throw new RuntimeException( 'No recognizable content. Check the original newsletter.' ); }
-        $xp = new DOMXPath( $this->dom );
+        $xp = new DOMXPath( $this->dom ); $this->xpath = $xp;
         if ( $xp->query( '//input[translate(@type,"PASSWORD","password")="password"]' )->length ) { throw new RuntimeException( 'This page requires authentication. Use a public campaign archive.' ); }
         $title = trim( $xp->evaluate( 'string(//title)' ) );
         // Remove executable and non-editorial metadata only; never remove a promotional content region.
@@ -77,13 +79,23 @@ final class Letterlift_Parser {
         // Keep inline phrasing together within legacy table cells, divs, and spans.
         $buffer = '';
         foreach ( $node->childNodes as $child ) {
-            $block = $child instanceof DOMElement && in_array( strtolower( $child->tagName ), array( 'p','div','table','tr','td','th','tbody','thead','tfoot','h1','h2','h3','h4','h5','h6','ul','ol','blockquote','figure','figcaption','hr','section','article','header','footer','main','pre','dl','iframe','object','embed','video','audio','svg','canvas','form' ), true );
+            // Outlook/template comments are not visible editorial content. Buffering them can
+            // turn conditional-comment delimiters into literal text on a second DOM parse.
+            if ( $child instanceof DOMComment ) { continue; }
+            $block = $child instanceof DOMElement && $this->is_structural( $child );
             if ( $block ) {
                 if ( self::text( $buffer ) || stripos( $buffer, '<img' ) !== false ) { $this->add( '<p>' . $buffer . '</p>', 'paragraph' ); } $buffer = '';
                 $this->walk( $child, $depth + 1 );
             } else { $buffer .= $this->dom->saveHTML( $child ); }
         }
         if ( self::text( $buffer ) || stripos( $buffer, '<img' ) !== false ) { $this->add( '<p>' . $buffer . '</p>', stripos( $buffer, '<img' ) !== false ? 'image' : 'paragraph' ); }
+    }
+    private function is_structural( DOMElement $node ): bool {
+        if ( in_array( strtolower( $node->tagName ), self::STRUCTURAL_TAGS, true ) ) { return true; }
+        // Legacy email wrappers (including spans/fonts and custom tags) may enclose entire
+        // layout tables. Traverse them rather than buffering all descendants as inline HTML.
+        $tests = array_map( static fn( $tag ) => 'self::' . $tag, self::STRUCTURAL_TAGS );
+        return (bool) $this->xpath->evaluate( 'boolean(.//*[' . implode( ' or ', $tests ) . '])', $node );
     }
     private function add( string $html, string $type, array $warnings = array() ): void {
         if ( count( $this->blocks ) >= 500 ) { throw new RuntimeException( 'This newsletter exceeds the limit of 500 content blocks.' ); }
@@ -95,6 +107,9 @@ final class Letterlift_Parser {
         }
         $block_images = array();
         foreach ( $doc->getElementsByTagName( 'a' ) as $a ) {
+            // Empty legacy Mailchimp image-link titles have no editorial meaning and cannot
+            // be represented by core/image; normalize them before content is approved.
+            if ( $a->hasAttribute( 'title' ) && trim( $a->getAttribute( 'title' ) ) === '' ) { $a->removeAttribute( 'title' ); }
             if ( $a->hasAttribute( 'href' ) ) { $a->setAttribute( 'href', Letterlift_Remote::absolute( $a->getAttribute( 'href' ), $this->base ) ); }
         }
         foreach ( $doc->getElementsByTagName( 'img' ) as $img ) {

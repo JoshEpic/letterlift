@@ -36,7 +36,7 @@ A focused parser correction prevents nested data tables from turning an enclosin
 | `tests/admin.test.cjs` | Retains organizer tests and verifies that previews consume server output and display fallback warnings. |
 | `package.json`, `package-lock.json` | Locked development-only jsdom dependency and explicit Gutenberg validation command. |
 | `README.md`, `readme.txt`, `docs/specification.md`, `docs/acceptance.md`, this report | Updated behavior, compatibility, verification, and release gate. |
-| `dist/letterlift-1.0.0.zip` | Rebuilt installable runtime package; development dependencies/tests are excluded. |
+| `dist/letterlift-1.0.1.zip` | Rebuilt installable runtime package; development dependencies/tests are excluded. |
 
 ## Supported native content
 
@@ -89,9 +89,9 @@ Tested with PHP 8.4.27 and isolated local WordPress 6.6 and 7.1.4 installations 
 | Suite | Result per tested WordPress version |
 | --- | --- |
 | Original integration suite, extended | 94 assertions pass; original 75 behaviors retained with native output expectations |
-| Serializer suite | 74 assertions pass |
+| Serializer suite | 81 assertions pass |
 | Legacy compatibility/recovery suite | 12 assertions pass |
-| Official core JS validity suite | 141 block instances exercised, including parse/save round trips and native paragraph/heading/image/list edits |
+| Official core JS validity suite | 159 block instances exercised, including parse/save round trips and native paragraph/heading/image/list edits |
 | Admin DOM suite | 5 tests pass |
 | PHP / JavaScript syntax | Pass |
 
@@ -129,3 +129,14 @@ No checks A–G are marked complete. The browser connector reported that its hos
 | G: Deactivate and confirm real editor/front-end independence | Automated rendering passes; real browser check unverified / release blocker |
 
 Before acceptance, capture browser evidence for A–G, confirm there are no invalid-block/recovery prompts, and complete the existing staging, keyboard, responsive, and live-source checks. MySQL/MariaDB behavior, PHP 8.1 runtime execution, theme-specific appearance, and manual accessibility remain staging verification items; the implementation preserves the declared minimum and introduces no production runtime dependencies.
+
+
+## Version 1.0.1 campaign regression
+
+The reported [Horton Collection July 2020 campaign](https://mailchi.mp/hortoncollection.com/horton-collection-july2020-issue3-bigwin-heavymedal-12614862) reproduced an extraction defect: its outer `<center>` was buffered as inline HTML, pulling all nested layout tables and editorial material into one content block. The fix classifies `<center>` as structural and traverses other wrappers when they contain structural descendants, while retaining ordinary inline phrasing within paragraphs. Source-only comments are skipped during traversal, and empty image-link titles are normalized during new analysis. The serializer and previously approved snapshots are unchanged.
+
+The fetched campaign now produces 29 normalized blocks, 2 sections, 11 referenced images, and no extraction-integrity warnings. Gutenberg output contains 14 Paragraph blocks, 11 Image blocks, a Heading, a List, a Buttons container, and one HTML fallback for the archive navigation/translation menu. Its generated content passed the official WordPress 7.1.4 JavaScript validation/save round-trip suite alongside the standard cases (221 block instances exercised).
+
+A synthetic, redistributable fixture at `tests/fixtures/centered-legacy.html` reproduces the legacy wrapper shape without copying the campaign's editorial content. Seven added assertions cover block separation, section/image preservation, nested font/span wrappers, native image output, inline phrasing, and comment artifacts. The regular core JS suite now exercises 159 block instances on WordPress 6.6 and 7.1.4. The full PHP suites pass 187 assertions per version; five admin DOM tests pass.
+
+Version 1.0.1 is updated in the plugin header/runtime constant, development package/lockfile, admin version display, and WordPress readme. Packaging derives its ZIP version from the plugin header, producing `dist/letterlift-1.0.1.zip`. Re-analyze affected sources deliberately: existing saved analyses, posts, and approved executions remain unchanged. This regression test does not complete manual Gutenberg browser acceptance.

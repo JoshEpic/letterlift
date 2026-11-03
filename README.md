@@ -6,7 +6,7 @@ A self-contained WordPress plugin for converting public Mailchimp newsletters in
 
 Requires WordPress 6.6+, PHP 8.1+, the PHP DOM extension, and WordPress-supported image processing. No Node.js, Composer, API key, account, or cloud service is needed on the WordPress server.
 
-1. Run `python3 scripts/package.py` to generate `dist/letterlift-1.0.0.zip`, or copy this directory to `wp-content/plugins/letterlift`.
+1. Run `python3 scripts/package.py` to generate `dist/letterlift-1.0.1.zip`, or copy this directory to `wp-content/plugins/letterlift`.
 2. Activate **Letterlift** in WordPress.
 3. Open **Tools → Letterlift**, paste a public Mailchimp campaign URL, and choose **Analyze Newsletter**.
 4. Select sections or expand individual blocks. In Multiple Posts mode, assign selected content to destination drafts. Removing a destination retains its content as unassigned.
@@ -65,3 +65,10 @@ The admin preview is rendered on the server from the same serializer and saved c
 See the [native Gutenberg delivery report](docs/native-gutenberg.md) for the test matrix, official core JavaScript validation commands, compatibility rules, supported structures, and remaining browser acceptance gate.
 
 See [manual acceptance](docs/acceptance.md) and the supplied [product specification](docs/specification.md). Automated checks are passing; a 1.0 release still requires representative live campaign testing and manual accessibility/responsive review. The browser connector was unavailable and native browser control was not approved, so real editor/visual acceptance is not claimed.
+
+
+## Version 1.0.1: centered legacy campaigns
+
+Fixes old Mailchimp campaigns whose `<center>` wrapper, or inline wrappers enclosing block elements, previously bundled the newsletter into one normalized block. Wrapper traversal now preserves individual paragraphs, headings, images, and reading order. Template comments no longer become visible delimiter artifacts. Empty image-link titles are normalized so ordinary images use native Image blocks.
+
+After installing 1.0.1, analyze an affected URL again. Choose a deliberate separate import when the duplicate-source prompt appears; resuming an older saved analysis retains its original extracted blocks. Existing drafts and approved executions are not rewritten.

@@ -68,7 +68,7 @@
     function showError(e) { error = e.message; render(); document.getElementById('ll-errors')?.focus(); }
     function render() {
         const focusId = document.activeElement?.id;
-        root.innerHTML = `<header class="ll-header"><div><h1>Letterlift <span>Newsletter → WordPress</span></h1><p>Good stories deserve a second home.</p></div><span class="ll-version">1.0</span></header>
+        root.innerHTML = `<header class="ll-header"><div><h1>Letterlift <span>Newsletter → WordPress</span></h1><p>Good stories deserve a second home.</p></div><span class="ll-version">${esc(cfg.version || '1.0.1')}</span></header>
         <nav class="nav-tab-wrapper" aria-label="Letterlift views">${[['new','New Import'],['history','Import History'],['settings','Settings']].map(([id,label]) => `<button class="nav-tab ${view === id ? 'nav-tab-active' : ''}" data-action="nav" data-view="${id}" ${busy ? 'disabled' : ''}>${label}</button>`).join('')}</nav>
         ${error ? `<div class="notice notice-error ll-notice" id="ll-errors" role="alert" tabindex="-1"><p>${esc(error)}</p><p>${button('Reload saved import','reload')} ${button('Dismiss','dismiss')}</p></div>` : ''}
         <p class="ll-status" id="ll-save-status" role="status" aria-live="polite">${esc(message)}</p>
