@@ -10,6 +10,7 @@
     const expanded = new Set();
     let sourceText = null;
     const imagePreviews = new Map();
+    let serverPreview = null;
     const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const button = (label, action, attrs = '', primary = false) => `<button type="button" class="button ${primary ? 'button-primary' : ''}" data-action="${action}" ${attrs} ${busy ? 'disabled' : ''}>${esc(label)}</button>`;
     const select = (field, options, value, attrs = '') => `<select data-field="${field}" ${attrs}>${options.map(o => `<option value="${esc(o.id)}" ${String(value) === String(o.id) ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>`;
@@ -36,7 +37,18 @@
         return {included:included.length, excluded:all.length-included.length, unassigned:p.mode === 'single' ? 0 : included.filter(b => !p.assignments[b.id]).length, images:new Set(included.flatMap(b => b.images)).size};
     }
     function markDirty() {
-        generation++; message = 'Saving review…'; clearTimeout(saveTimer); saveTimer = setTimeout(() => save().catch(showError), 700);
+        generation++; serverPreview = null; root.querySelectorAll('[data-preview-panel]').forEach(panel => { panel.innerHTML = articlePreview(activeDraft()?.id || '', true); }); message = 'Saving review…'; clearTimeout(saveTimer); saveTimer = setTimeout(() => save().catch(showError), 700);
+    }
+    async function refreshPreview() {
+        if (!session || session.execution) return;
+        const id = session.id, revision = session.revision, gen = generation;
+        const preview = await api(`sessions/${id}/preview`);
+        if (session?.id !== id || session.revision !== revision || generation !== gen) return;
+        serverPreview = preview;
+        // Update only the preview panel: do not remount text controls or steal their caret.
+        root.querySelectorAll('[data-preview-panel]').forEach(panel => {
+            panel.innerHTML = articlePreview(activeDraft()?.id || '', true);
+        });
     }
     async function save() {
         clearTimeout(saveTimer);
@@ -50,6 +62,7 @@
             if (session && session.id === localId) { session.revision = result.revision; session.status = result.status; savedGeneration = gen; message = generation === gen ? 'All review changes saved.' : 'Saving review…'; }
         } finally { savePromise = null; }
         if (generation !== savedGeneration) return save();
+        await refreshPreview();
         const note = document.getElementById('ll-save-status'); if (note) note.textContent = message;
     }
     function showError(e) { error = e.message; render(); document.getElementById('ll-errors')?.focus(); }
@@ -113,18 +126,19 @@
         <div class="ll-actions">${button('Move Up','up',`data-id="${esc(b.id)}" id="ll-up-${esc(b.id)}"`)} ${button('Move Down','down',`data-id="${esc(b.id)}" id="ll-down-${esc(b.id)}"`)}</div></article>`;
     }
     function draftList() {
-        return `<div class="ll-draft-list" aria-label="Destination drafts">${drafts().map(d => `<div class="${activeDraft()?.id === d.id ? 'll-active' : ''}">${button(d.title || 'Untitled draft','active',`data-id="${esc(d.id)}" aria-pressed="${activeDraft()?.id === d.id}"`)}<span>${blocksFor(d.id).length} blocks · ${new Set(blocksFor(d.id).map(b => b.section)).size} sections</span>${session.plan.mode === 'multiple' ? button('Remove destination','remove-draft',`data-id="${esc(d.id)}"`) : ''}</div>`).join('')}</div>`;
+        return `<div class="ll-draft-list" aria-label="Destination drafts">${drafts().map(d => `<div class="${activeDraft()?.id === d.id ? 'll-active' : ''}">${button(d.title || 'Untitled draft','active',`data-id="${esc(d.id)}" aria-pressed="${activeDraft()?.id === d.id}"`)}<span>${blocksFor(d.id).length} blocks · ${new Set(blocksFor(d.id).map(b => b.section)).size} sections${serverPreview?.drafts?.[d.id]?.warnings.length ? ` · ${serverPreview.drafts[d.id].warnings.length} formatting review(s)` : ''}</span>${session.plan.mode === 'multiple' ? button('Remove destination','remove-draft',`data-id="${esc(d.id)}"`) : ''}</div>`).join('')}</div>`;
     }
     function outline() {
         const d = activeDraft();
         if (!d) return '<p>Create a draft to assign content. Selected unassigned blocks remain in the organizer.</p>';
         const blocks = blocksFor(d.id);
-        return `<h4>${esc(d.title)}</h4><ol class="ll-outline-list">${blocks.map(b => `<li>${esc(b.type)}: ${esc(b.text.slice(0,80) || 'Image / divider')} <span>${button('↑','up',`data-id="${esc(b.id)}" aria-label="Move block ${b.position} up"`)} ${button('↓','down',`data-id="${esc(b.id)}" aria-label="Move block ${b.position} down"`)}</span></li>`).join('')}</ol>${articlePreview(blocks)}`;
+        return `<h4>${esc(d.title)}</h4><ol class="ll-outline-list">${blocks.map(b => `<li>${esc(b.type)}: ${esc(b.text.slice(0,80) || 'Image / divider')} <span>${button('↑','up',`data-id="${esc(b.id)}" aria-label="Move block ${b.position} up"`)} ${button('↓','down',`data-id="${esc(b.id)}" aria-label="Move block ${b.position} down"`)}</span></li>`).join('')}</ol>${articlePreview(d.id)}`;
     }
-    function articlePreview(blocks) {
+    function articlePreview(draftId, inner = false) {
         // WordPress sanitizes source markup. The sandbox permits only validated image data
         // returned by our preview endpoint; the browser never retrieves remote image URLs.
-        let html = blocks.map(b => b.html).join('\n');
+        const preview = serverPreview?.revision === session.revision ? serverPreview.drafts?.[draftId] : null;
+        const html = preview?.html || '<p>Preparing the WordPress block preview. Save your review to refresh.</p>';
         const doc = new DOMParser().parseFromString(`<!doctype html><html><body>${html}</body></html>`, 'text/html');
         doc.querySelectorAll('img').forEach(img => {
             const source = session.analysis.images.find(i => i.url === img.getAttribute('src'));
@@ -132,7 +146,7 @@
             if (preview && /^data:image\/(jpeg|png|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(preview)) { img.setAttribute('src',preview); return; }
             const placeholder = doc.createElement('div'); placeholder.className = 'image-placeholder'; placeholder.textContent = `Image: ${img.alt || 'Newsletter image'} (imported during execution)`; img.replaceWith(placeholder); });
         const srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><style>body{font:16px/1.6 Georgia,serif;color:#1d2327;padding:16px;overflow-wrap:anywhere}h1,h2,h3,h4{line-height:1.25}img{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%;display:block;overflow:auto}td,th{border:1px solid #bbb;padding:8px}blockquote{border-left:3px solid #b2bdb9;padding-left:16px}.image-placeholder{background:#eff3f1;border:1px dashed #879c91;padding:24px;margin:12px 0;font:14px sans-serif}a{color:#176a50}pre{white-space:pre-wrap}</style></head><body>${doc.body.innerHTML}</body></html>`;
-        return `<p class="description">Normalized content preview. Theme styling may differ. Load images safely through WordPress without creating attachments.</p>${button('Load image previews','image-previews')}<iframe class="ll-preview" sandbox="" referrerpolicy="no-referrer" title="Draft content preview" srcdoc="${esc(srcdoc)}"></iframe>`;
+        return `${inner ? '' : '<div data-preview-panel>'}${(preview?.warnings || []).map(w => `<p class="ll-warning">${esc(w.message)} <a href="#ll-block-${esc(w.block_id)}" data-reveal="${esc(w.block_id)}">Inspect block</a></p>`).join('')}<p class="description">WordPress block preview. Theme styling may differ. Load images safely through WordPress without creating attachments.</p>${button('Load image previews','image-previews')}<iframe class="ll-preview" sandbox="" referrerpolicy="no-referrer" title="Draft content preview" srcdoc="${esc(srcdoc)}"></iframe>${inner ? '' : '</div>'}`;
     }
     function summary() {
         const c = counts();
@@ -147,7 +161,7 @@
         <label>Category ${select('draft-category',cfg.categories,d.category,`data-id="${esc(d.id)}"`)}</label><label>Author ${select('draft-author',cfg.authors,d.author,`data-id="${esc(d.id)}"`)}</label>
         <label>Publication date (${esc(cfg.timezone)}; blank = creation time)<input type="datetime-local" data-field="draft-date" data-id="${esc(d.id)}" value="${esc(d.date)}"></label>
         <label>Featured image ${select('draft-featured',[{id:'',name:'No featured image'}, ...(d.featured && !availableImages.has(d.featured) ? [{id:d.featured,name:'Previously selected image excluded — choose another or None'}] : []), ...session.analysis.images.filter(i => availableImages.has(i.id)).map(i => ({id:i.id,name:i.alt || i.url.split('/').pop()}))],d.featured,`data-id="${esc(d.id)}"`)}</label><p>Status: <strong>Draft</strong> · Post type: Post</p></aside>
-        <section class="ll-card"><h3>${esc(d.title)}</h3>${articlePreview(blocksFor(d.id))}${summary()}<h4>Final review</h4>${sourceLink()}<ul>${drafts().map(draft => `<li>${esc(draft.title || 'Missing title')} — ${blocksFor(draft.id).length} blocks${!blocksFor(draft.id).length ? ' · Needs content' : ''}</li>`).join('')}</ul><p>${session.analysis.warnings.length} integrity warnings to review above. Excluded and unassigned blocks remain in the saved source session.</p></section></div>`;
+        <section class="ll-card"><h3>${esc(d.title)}</h3>${articlePreview(d.id)}${summary()}<h4>Final review</h4>${sourceLink()}<ul>${drafts().map(draft => `<li>${esc(draft.title || 'Missing title')} — ${blocksFor(draft.id).length} blocks${!blocksFor(draft.id).length ? ' · Needs content' : ''}</li>`).join('')}</ul><p>${session.analysis.warnings.length} integrity warnings to review above. Excluded and unassigned blocks remain in the saved source session.</p></section></div>`;
     }
     function executionView() {
         const e = session.execution;
@@ -167,12 +181,12 @@
     }
     async function loadSession(id) {
         await save();
-        session = await api(`sessions/${id}`); generation = savedGeneration = 0; sourceText = null; imagePreviews.clear(); active = session.plan.mode === 'single' ? 'single' : session.plan.drafts[0]?.id; view = 'new'; step = session.execution ? 'details' : 'organize'; message = 'Saved import restored.'; duplicate = null; expanded.clear();
+        session = await api(`sessions/${id}`); generation = savedGeneration = 0; sourceText = null; serverPreview = null; imagePreviews.clear(); active = session.plan.mode === 'single' ? 'single' : session.plan.drafts[0]?.id; view = 'new'; step = session.execution ? 'details' : 'organize'; message = 'Saved import restored.'; duplicate = null; expanded.clear(); await refreshPreview();
     }
     async function analyze(separate = false) {
         url = document.getElementById('ll-url')?.value || url;
         busy = true; error = ''; message = 'Retrieving newsletter, identifying content and checking integrity…'; render();
-        try { session = await api('analyze',{url,separate}); generation = savedGeneration = 0; sourceText = null; imagePreviews.clear(); active = session.plan.mode === 'single' ? 'single' : session.plan.drafts[0]?.id; step = 'organize'; duplicate = null; message = 'Analysis saved. No posts or media were created.'; }
+        try { session = await api('analyze',{url,separate}); generation = savedGeneration = 0; sourceText = null; serverPreview = null; imagePreviews.clear(); active = session.plan.mode === 'single' ? 'single' : session.plan.drafts[0]?.id; step = 'organize'; duplicate = null; message = 'Analysis saved. No posts or media were created.'; await refreshPreview(); }
         catch (e) { if (e.data?.code === 'duplicate') { duplicate = e.data.duplicates; message = ''; } else throw e; }
         finally { busy = false; render(); }
     }
@@ -245,8 +259,8 @@
         await perform(async () => {
             if (action === 'nav') { await save(); view = control.dataset.view; if (view === 'history') { historyPage = 1; history = await api('history'); } if (view === 'settings') settings = await api('settings'); }
             if (action === 'resume') await loadSession(id);
-            if (action === 'reload') { if (session) { clearTimeout(saveTimer); if (savePromise) await savePromise.catch(() => {}); session = await api(`sessions/${session.id}`); generation = savedGeneration = 0; message = 'Saved import reloaded.'; } else { message = ''; } }
-            if (action === 'new') { await save(); session = null; sourceText = null; generation = savedGeneration = 0; view = 'new'; url = ''; message = ''; duplicate = null; history = await api('history'); }
+            if (action === 'reload') { if (session) { clearTimeout(saveTimer); if (savePromise) await savePromise.catch(() => {}); session = await api(`sessions/${session.id}`); generation = savedGeneration = 0; serverPreview = null; await refreshPreview(); message = 'Saved import reloaded.'; } else { message = ''; } }
+            if (action === 'new') { await save(); session = null; serverPreview = null; sourceText = null; generation = savedGeneration = 0; view = 'new'; url = ''; message = ''; duplicate = null; history = await api('history'); }
             if (action === 'save') { await save(); message = 'All review changes saved.'; }
             if (action === 'preview') { await save(); step = 'preview'; }
             if (action === 'organize') { await save(); step = 'organize'; }

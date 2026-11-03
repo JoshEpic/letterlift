@@ -23,7 +23,7 @@ final class Letterlift_Plugin {
         return true;
     }
     public function routes(): void {
-        $routes = array( '/history' => 'GET', '/settings' => 'GET,POST', '/cleanup' => 'POST', '/analyze' => 'POST', '/sessions/(?P<id>[a-f0-9-]{36})' => 'GET,POST', '/sessions/(?P<id>[a-f0-9-]{36})/(?P<action>approve|tick|retry|source|preview-image)' => 'GET,POST' );
+        $routes = array( '/history' => 'GET', '/settings' => 'GET,POST', '/cleanup' => 'POST', '/analyze' => 'POST', '/sessions/(?P<id>[a-f0-9-]{36})' => 'GET,POST', '/sessions/(?P<id>[a-f0-9-]{36})/(?P<action>approve|tick|retry|source|preview-image|preview)' => 'GET,POST' );
         foreach ( $routes as $route => $methods ) { register_rest_route( 'letterlift/v1', $route, array( 'methods' => $methods, 'callback' => array( $this, 'dispatch' ), 'permission_callback' => array( $this, 'permission' ) ) ); }
     }
     public function dispatch( WP_REST_Request $r ) {
@@ -43,8 +43,9 @@ final class Letterlift_Plugin {
             if ( str_ends_with( $path, '/analyze' ) ) { return $this->analyze( $body ); }
             $id = $r['id']; $action = $r['action'] ?? '';
             if ( $r->get_method() === 'GET' ) {
-                if ( $action && ! in_array( $action, array( 'source', 'preview-image' ), true ) ) { throw new RuntimeException( 'This operation requires an explicit action.' ); }
+                if ( $action && ! in_array( $action, array( 'source', 'preview-image', 'preview' ), true ) ) { throw new RuntimeException( 'This operation requires an explicit action.' ); }
                 $s = Letterlift_Store::get( $id );
+                if ( $action === 'preview' ) { return Letterlift_Serializer::preview( $s ); }
                 if ( $action === 'preview-image' ) {
                     $image_id = sanitize_key( $r->get_param( 'image' ) ?? '' );
                     $images = array_column( $s['analysis']['images'], null, 'id' );
@@ -53,7 +54,7 @@ final class Letterlift_Plugin {
                 }
                 return $action === 'source' ? array( 'source' => $s['source'] ) : $this->public_session( $s );
             }
-            if ( in_array( $action, array( 'source', 'preview-image' ), true ) ) { throw new RuntimeException( 'The original source is read-only.' ); }
+            if ( in_array( $action, array( 'source', 'preview-image', 'preview' ), true ) ) { throw new RuntimeException( 'The original source is read-only.' ); }
             $token = Letterlift_Store::lock( $id );
             try {
                 $s = Letterlift_Store::get( $id );

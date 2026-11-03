@@ -13,6 +13,8 @@ Turn public Mailchimp newsletters into independently editable WordPress drafts.
 == Description ==
 Paste a public newsletter URL, analyze its content without creating posts, organize sections or individual blocks, preview your plan, and create one or multiple WordPress drafts.
 
+* Native Gutenberg paragraphs, headings, images with captions, lists, quotes, separators, simple tables, and buttons.
+* Custom HTML only for reviewed fallback regions.
 * Section and block selection with mixed checkbox states.
 * Separate single-post and multi-post organization.
 * Accessible move controls and recoverable unassigned content.
@@ -42,4 +44,4 @@ Resume from Import History. Completed operations are reused; failed destinations
 
 == Changelog ==
 = 1.0.0 =
-Initial implementation. See the repository acceptance checklist before production release.
+Native Gutenberg serialization for new approvals; older approved imports retain their original serializer during recovery. Existing posts are not migrated. Real Block Editor acceptance remains a release requirement. See the repository acceptance checklist before production release.

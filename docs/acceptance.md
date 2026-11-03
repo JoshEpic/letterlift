@@ -8,7 +8,9 @@ The plugin is implemented and installable. Automated checks pass. Release accept
 
 The integration suite runs on an isolated WordPress installation using the official SQLite integration. Remote HTML/image responses are mocked, while WordPress REST, permissions, database writes, post insertion, Media Library processing, cleanup, and lifecycle APIs run normally.
 
-Current results: **75 PHP/WordPress assertions** on WordPress **7.1.4**, PHP **8.4.27**; **4 DOM interface tests**; PHP syntax and JavaScript syntax checks pass. The DOM suite is not a substitute for browser layout, assistive technology, or keyboard acceptance.
+Current results for the native Gutenberg improvement: **94 integration assertions**, **74 serializer assertions**, and **12 compatibility/recovery assertions** on each tested WordPress version (**6.6** and **7.1.4**), using PHP **8.4.27** and isolated SQLite databases. The original 75 integration assertions are retained (their old Custom HTML expectation is updated to assert native block types). **5 DOM interface tests** pass. Official core JavaScript parsing/save-function checks exercise **141 block instances per WordPress version**, including save round trips and editing through native block APIs. PHP and JavaScript syntax checks pass.
+
+These automated DOM and core JS checks are not evidence of manual browser editing, assistive technology behavior, or visual layout. See [the native Gutenberg report](native-gutenberg.md).
 
 | Specification scenario | Automated evidence | Remaining manual review |
 | --- | --- | --- |
@@ -51,11 +53,11 @@ Security checks cover anonymous access, independent nonce enforcement, unsafe/un
 
 ## Implementation choices
 
-- Posts use core Custom HTML blocks to preserve safe email markup and avoid custom plugin block dependencies. Rich editing happens in the WordPress editor after import.
+- New approvals use native core Paragraph, Heading, Image, List/List Item, Quote, Separator, Table, and Buttons/Button blocks. Complex regions use sanitized Custom HTML with a formatting warning. No Letterlift blocks are required. Existing approved executions without a serializer version retain their original Custom HTML output.
 - Original image URLs are not loaded directly by the admin browser. An explicit preview action retrieves and validates them on the WordPress server; the sandbox displays bounded image data.
 - Processing is driven by explicit browser requests, one asset or destination per request. It resumes on user action and does not run cron/background publishing.
 - Approved plans cannot be edited during recovery. A different content plan requires a deliberate separate import.
 - DOM-based analysis is deterministic and conservative. Unsupported embeds require a reviewed safe fallback or explicit exclusion. No AI rewriting is performed.
 - Exact theme styling, custom providers/domains, custom post types, bulk archive discovery, and automatic publishing remain outside 1.0 scope.
 
-Visual and live-campaign testing was not performed in this session because the browser-control host was unavailable. No production deployment or existing-site change was performed.
+Real browser/editor and live-campaign acceptance remains unverified: the browser-control host was unavailable, and native computer-use access to Brave was not approved. Native serialization and natural editing in a real Gutenberg editor are release blockers until checks A–G in the native Gutenberg report are completed. No production deployment or existing-site change was performed.

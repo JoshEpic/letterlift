@@ -11,9 +11,9 @@ final class Letterlift_Parser {
         return array(
             'p' => array(), 'br' => array(), 'strong' => array(), 'b' => array(), 'em' => array(), 'i' => array(), 'u' => array(), 's' => array(),
             'a' => array( 'href' => true, 'title' => true ), 'h1' => array(), 'h2' => array(), 'h3' => array(), 'h4' => array(), 'h5' => array(), 'h6' => array(),
-            'ul' => array(), 'ol' => array( 'start' => true ), 'li' => array(), 'blockquote' => array(), 'cite' => array(), 'hr' => array(),
+            'ul' => array(), 'ol' => array( 'start' => true, 'reversed' => true, 'type' => true ), 'li' => array( 'value' => true ), 'blockquote' => array(), 'cite' => array(), 'hr' => array(),
             'img' => array( 'src' => true, 'alt' => true, 'width' => true, 'height' => true ), 'figure' => array(), 'figcaption' => array(),
-            'table' => array(), 'thead' => array(), 'tbody' => array(), 'tfoot' => array(), 'tr' => array(), 'td' => array( 'colspan' => true, 'rowspan' => true ), 'th' => array( 'scope' => true, 'colspan' => true, 'rowspan' => true ),
+            'table' => array(), 'caption' => array(), 'thead' => array(), 'tbody' => array(), 'tfoot' => array(), 'tr' => array(), 'td' => array( 'colspan' => true, 'rowspan' => true ), 'th' => array( 'scope' => true, 'colspan' => true, 'rowspan' => true ),
             'pre' => array(), 'code' => array(), 'sup' => array(), 'sub' => array(), 'dl' => array(), 'dt' => array(), 'dd' => array(),
         );
     }
@@ -67,7 +67,7 @@ final class Letterlift_Parser {
         $types = array( 'p' => 'paragraph', 'img' => 'image', 'figure' => 'image', 'figcaption' => 'caption', 'ul' => 'list', 'ol' => 'list', 'blockquote' => 'quote', 'hr' => 'divider', 'pre' => 'structured', 'dl' => 'structured' );
         if ( isset( $types[ $tag ] ) ) { $this->add( $this->dom->saveHTML( $node ), $types[ $tag ] ); return; }
         $looks_like_data = $tag === 'table' && $node->getAttribute( 'role' ) !== 'presentation' && $node->getElementsByTagName( 'table' )->length === 0 && $node->getElementsByTagName( 'tr' )->length >= 2 && $node->getElementsByTagName( 'tr' )->item( 0 )->getElementsByTagName( 'td' )->length >= 2;
-        if ( $tag === 'table' && ( $looks_like_data || $node->getElementsByTagName( 'th' )->length || $node->getAttribute( 'role' ) === 'table' ) ) {
+        if ( $tag === 'table' && ( $looks_like_data || ( $node->getAttribute( 'role' ) !== 'presentation' && $node->getElementsByTagName( 'table' )->length === 0 && $node->getElementsByTagName( 'th' )->length ) || $node->getAttribute( 'role' ) === 'table' ) ) {
             $this->add( $this->dom->saveHTML( $node ), 'table', array( array( 'severity' => 'review', 'message' => 'This table may need formatting review.' ) ) ); return;
         }
         if ( in_array( $tag, array( 'iframe', 'object', 'embed', 'video', 'audio', 'svg', 'canvas', 'form' ), true ) ) {

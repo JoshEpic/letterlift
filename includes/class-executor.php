@@ -4,12 +4,14 @@ final class Letterlift_Executor {
     public static function begin( array $s ): array {
         if ( isset( $s['execution'] ) ) { return $s; }
         $p = Letterlift_Plan::clean( $s['analysis'], $s['plan'] ); Letterlift_Plan::validate( $s['analysis'], $p );
+        // Preflight the same conversion used by the preview before freezing execution.
+        foreach ( Letterlift_Plan::destinations( $p ) as $d ) { Letterlift_Serializer::generate( Letterlift_Plan::blocks( $s['analysis'], $p, $d['id'] ) ); }
         $images = array(); $posts = array();
         foreach ( Letterlift_Plan::destinations( $p ) as $d ) {
             foreach ( Letterlift_Plan::blocks( $s['analysis'], $p, $d['id'] ) as $b ) { foreach ( $b['images'] as $id ) { $images[ $id ] = array( 'status' => 'pending', 'id' => 0, 'error' => '' ); } }
             $posts[ $d['id'] ] = array( 'status' => 'pending', 'id' => 0, 'title' => $d['title'], 'error' => '' );
         }
-        $s['execution'] = array( 'snapshot' => $p, 'approved_at' => gmdate( 'c' ), 'approved_by' => get_current_user_id(), 'plan_hash' => hash( 'sha256', wp_json_encode( $p ) ), 'images' => $images, 'posts' => $posts, 'phase' => 'Approved plan recorded' );
+        $s['execution'] = array( 'serializer_version' => Letterlift_Serializer::CURRENT, 'snapshot' => $p, 'approved_at' => gmdate( 'c' ), 'approved_by' => get_current_user_id(), 'plan_hash' => hash( 'sha256', wp_json_encode( $p ) ), 'images' => $images, 'posts' => $posts, 'phase' => 'Approved plan recorded' );
         $s['status'] = 'importing'; return Letterlift_Store::save( $s );
     }
     public static function retry( array $s ): array {
@@ -33,7 +35,7 @@ final class Letterlift_Executor {
             try {
                 $blocks = Letterlift_Plan::blocks( $s['analysis'], $p, $d['id'] ); $urls = array();
                 foreach ( $blocks as $b ) { foreach ( $b['images'] as $image_id ) { if ( $e['images'][ $image_id ]['status'] !== 'complete' ) { throw new RuntimeException( 'An included image needs attention. Retry the failed image to finish this draft.' ); } } }
-                foreach ( $s['analysis']['images'] as $img ) { if ( ( $e['images'][ $img['id'] ]['status'] ?? '' ) === 'complete' ) { $url = wp_get_attachment_url( $e['images'][ $img['id'] ]['id'] ); if ( ! $url ) { throw new RuntimeException( 'An imported image was removed. Restore it before retrying.' ); } $urls[ $img['url'] ] = $url; } }
+                foreach ( $s['analysis']['images'] as $img ) { if ( ( $e['images'][ $img['id'] ]['status'] ?? '' ) === 'complete' ) { $url = wp_get_attachment_url( $e['images'][ $img['id'] ]['id'] ); if ( ! $url ) { throw new RuntimeException( 'An imported image was removed. Restore it before retrying.' ); } $urls[ $img['url'] ] = array( 'url' => $url, 'id' => (int) $e['images'][ $img['id'] ]['id'] ); } }
                 $op['id'] = self::post( $s, $d, $blocks, $urls ); $op['status'] = 'complete'; $op['error'] = '';
             } catch ( Throwable $error ) {
                 global $wpdb;
@@ -76,7 +78,7 @@ final class Letterlift_Executor {
         global $wpdb;
         $guid = 'urn:letterlift:' . $s['id'] . ':' . $d['id'];
         $id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT ID FROM $wpdb->posts WHERE guid = %s LIMIT 1", $guid ) );
-        $content = Letterlift_Plan::content( $blocks, $urls );
+        $content = Letterlift_Plan::content( $blocks, $urls, Letterlift_Serializer::version( $s ) );
         if ( ! $id ) {
             // Stable GUID is written in the initial INSERT, closing the create-before-session-save retry window.
             $post = array( 'guid' => $guid, 'post_type' => 'post', 'post_status' => 'draft', 'post_title' => $d['title'], 'post_name' => $d['slug'] ?: sanitize_title( $d['title'] ), 'post_excerpt' => $d['excerpt'] ?: wp_trim_words( Letterlift_Parser::text( $content ), 45, '…' ), 'post_content' => $content, 'post_author' => $d['author'], 'post_category' => array( $d['category'] ) );
@@ -88,6 +90,7 @@ final class Letterlift_Executor {
         $stored = get_post( $id );
         if ( $stored->post_status !== 'draft' ) { throw new RuntimeException( 'This destination is no longer a draft. Review the existing post before retrying.' ); }
         if ( hash( 'sha256', $stored->post_content ) !== hash( 'sha256', $content ) ) { throw new RuntimeException( 'The existing draft content differs from the approved preview. Inspect it and restore the approved content before retrying. Letterlift will preserve your edits.' ); }
+        update_post_meta( $id, '_letterlift_serializer_version', Letterlift_Serializer::version( $s ) );
         update_post_meta( $id, '_letterlift_source_key', $s['source_key'] ); update_post_meta( $id, '_letterlift_source_url', $s['url'] ); update_post_meta( $id, '_letterlift_session', $s['id'] ); update_post_meta( $id, '_letterlift_plan_hash', $s['execution']['plan_hash'] );
         if ( get_post_meta( $id, '_letterlift_session', true ) !== $s['id'] || get_post_meta( $id, '_letterlift_plan_hash', true ) !== $s['execution']['plan_hash'] || get_post_meta( $id, '_letterlift_source_url', true ) !== $s['url'] ) { throw new RuntimeException( 'The draft exists, but its import metadata could not be saved. Retry to finish.' ); }
         if ( $d['featured'] ) {

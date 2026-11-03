@@ -65,13 +65,7 @@ final class Letterlift_Plan {
             if ( $w['severity'] === 'high' && ( $w['id'] === 'source-integrity' || ! empty( $p['selection'][ $w['id'] ] ) ) && ! in_array( $w['id'], $p['acknowledged'], true ) ) { throw new RuntimeException( 'Resolve the content integrity warnings before creating drafts.' ); }
         }
     }
-    public static function content( array $blocks, array $images = array() ): string {
-        $html = '';
-        foreach ( $blocks as $b ) {
-            $part = $b['html'];
-            foreach ( $images as $src => $local ) { $part = str_replace( esc_attr( $src ), esc_attr( $local ), $part ); }
-            $html .= "<!-- wp:html -->\n" . wp_kses( $part, Letterlift_Parser::allowed() ) . "\n<!-- /wp:html -->\n";
-        }
-        return $html;
+    public static function content( array $blocks, array $images = array(), string $version = Letterlift_Serializer::CURRENT ): string {
+        return Letterlift_Serializer::generate( $blocks, $images, $version )['content'];
     }
 }

@@ -13,7 +13,7 @@
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 define( 'LETTERLIFT_VERSION', '1.0.0' );
 define( 'LETTERLIFT_FILE', __FILE__ );
-foreach ( array( 'store', 'remote', 'parser', 'plan', 'executor', 'plugin' ) as $component ) {
+foreach ( array( 'store', 'remote', 'parser', 'serializer', 'plan', 'executor', 'plugin' ) as $component ) {
     require_once __DIR__ . '/includes/class-' . $component . '.php';
 }
 register_activation_hook( __FILE__, array( 'Letterlift_Store', 'install' ) );

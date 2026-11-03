@@ -841,3 +841,11 @@ Letterlift 1.0 is complete when an ordinary WordPress administrator can paste a 
 The process must preserve original editorial content, transparently report uncertainties, avoid duplicate creation, recover from interruption, and leave the resulting WordPress content independent of the plugin.
 
 **The product succeeds when people trust the result enough to use Letterlift without needing a developer to supervise every import.**
+
+## 16. Required native Gutenberg generation amendment
+
+New import approvals must generate independently editable native WordPress core blocks wherever safely supported: Paragraph, Heading, Image (including known captions and managed attachment IDs), List/List Item, Quote, Separator, simple data Table, and supported Buttons/Button CTAs. Sanitized Custom HTML is restricted to reviewed fallback regions. Native serialization lives separately from provider extraction.
+
+The server preview and execution must use the same versioned serializer and approved content model. Existing posts are not migrated. Previously approved unversioned executions retain the original serializer during recovery. New approvals record their serializer version without changing prior immutable plans.
+
+Valid Gutenberg save markup, natural editing with native controls, and independence after deactivation/uninstall are release blockers. PHP parsing and automated JavaScript validation do not replace real browser acceptance. See [native Gutenberg implementation and acceptance](native-gutenberg.md).

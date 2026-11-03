@@ -25,7 +25,10 @@ async function setup(options = {}) {
         if (route.includes('/sessions/')) {
             if (body?.plan) { stored.plan = body.plan; stored.revision++; }
             if (route.endsWith('/source')) data = {source:'<html><script>untrusted()</script>Source</html>'};
-            else data = structuredClone(stored);
+            else if (route.endsWith('/preview')) {
+                const destinations=stored.plan.mode==='single'?[stored.plan.single]:stored.plan.drafts;
+                data={revision:stored.revision,serializer_version:'gutenberg-v2',drafts:Object.fromEntries(destinations.map(d => [d.id,{html:options.previewHTML || `<p>Server serializer preview for ${d.id}</p>`,content:'<!-- wp:paragraph --><p>Server preview</p><!-- /wp:paragraph -->',warnings:options.warnings || []}]))};
+            } else data = structuredClone(stored);
         }
         return {ok:true,json:async () => data};
     };
@@ -66,11 +69,18 @@ test('section ordering, block ordering, and preview agree',async () => {
     assert.deepEqual(h.getStored().plan.order,['b3','b1','b2']);
     assert.equal(h.document.querySelector('.ll-section').id,'ll-section-s2');
     await h.click('[data-action="preview"]');assert.match(h.document.body.textContent,/Everything look good/);
-    const frame=h.document.querySelector('iframe');assert.equal(frame.getAttribute('sandbox'),'');assert.match(frame.getAttribute('srcdoc'),/default-src &#39;none&#39;|default-src 'none'/);
+    const frame=h.document.querySelector('iframe');assert.match(frame.getAttribute('srcdoc'),/Server serializer preview/);assert.doesNotMatch(frame.getAttribute('srcdoc'),/First source block/);assert.equal(frame.getAttribute('sandbox'),'');assert.match(frame.getAttribute('srcdoc'),/default-src &#39;none&#39;|default-src 'none'/);
 });
 test('saved original source is displayed as text, not executable markup',async () => {
     const h=await setup();await h.analyze();await h.click('[data-action="source"]');
     assert.match(h.document.querySelector('#ll-source').textContent,/<script>untrusted/);
     assert.equal(h.document.querySelector('#ll-source script'),null);
     assert.equal(h.requests.filter(r => r.route.endsWith('/source')).length,1);
+});
+test('preview displays server serialization warnings and never uses source HTML as an alternate renderer',async () => {
+    const h=await setup({previewHTML:'<h3>Canonical server output</h3><p>Only the server serializer supplied this preview.</p>',warnings:[{block_id:'b2',message:'This complex region is preserved as Custom HTML.'}]});await h.analyze();
+    assert.match(h.document.querySelector('iframe').getAttribute('srcdoc'),/Canonical server output/);
+    assert.doesNotMatch(h.document.querySelector('iframe').getAttribute('srcdoc'),/<h1>Story One/);
+    assert.match(h.document.querySelector('[data-preview-panel]').textContent,/preserved as Custom HTML/);
+    assert.ok(h.requests.some(r => r.route.endsWith('/preview')));
 });

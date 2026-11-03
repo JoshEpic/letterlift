@@ -86,6 +86,9 @@ try {
     $s = $res->get_data(); $sessions[] = $s['id'];
     ll_assert( ! isset( $s['source'] ), 'Raw source is not included in routine API responses.' );
     ll_assert( $before_posts === (int) $wpdb->get_var( "SELECT COUNT(*) FROM $wpdb->posts WHERE post_type IN ('post','attachment')" ), 'Analysis creates no posts or attachments.' );
+    $block_preview = ll_request( 'sessions/' . $s['id'] . '/preview' );
+    ll_assert( $block_preview->get_status() === 200 && $block_preview->get_data()['serializer_version'] === Letterlift_Serializer::CURRENT, 'Review preview uses the native versioned serializer.' );
+    ll_assert( $block_preview->get_data()['drafts']['single']['content'] === Letterlift_Plan::content( Letterlift_Plan::blocks( $s['analysis'], $s['plan'], 'single' ) ), 'REST preview and draft generator serialize the same saved plan.' );
     $image_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM $wpdb->posts WHERE post_type = 'attachment'" );
     // WP_REST_Request does not parse a query embedded in its route; set query params explicitly.
     $preview_request = new WP_REST_Request( 'GET', '/letterlift/v1/sessions/' . $s['id'] . '/preview-image' ); $preview_request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) ); $preview_request->set_query_params( array( 'image' => $s['analysis']['images'][0]['id'] ) );
@@ -99,17 +102,19 @@ try {
     // Put the image only in the first destination. A failure must not prevent the second draft.
     $save = ll_request( 'sessions/' . $s['id'], array( 'revision' => $s['revision'], 'plan' => $s['plan'] ) ); ll_assert( $save->get_status() === 200, 'Review saved.' ); $s = $save->get_data();
     $approve = ll_request( 'sessions/' . $s['id'] . '/approve', array( 'revision' => $s['revision'] ) ); ll_assert( $approve->get_status() === 200, 'Approval records snapshot.' ); $s = $approve->get_data();
+    ll_assert( $s['execution']['serializer_version'] === Letterlift_Serializer::CURRENT, 'Approval records the serializer version beside the immutable snapshot.' );
     $hash = $s['execution']['plan_hash'];
     $edit = ll_request( 'sessions/' . $s['id'], array( 'revision' => $s['revision'], 'plan' => $s['plan'] ) ); ll_assert( $edit->get_status() === 400, 'Approved plan cannot be edited.' );
     $remote_mode = 'image-failure';
     for ( $i = 0; $i < 12 && $s['status'] === 'importing'; $i++ ) { $tick = ll_request( 'sessions/' . $s['id'] . '/tick', array( 'revision' => $s['revision'] ) ); ll_assert( $tick->get_status() === 200, 'Bounded execution request succeeds.' ); $s = $tick->get_data(); }
     ll_assert( $s['status'] === 'needs_attention', 'Image failure produces recoverable partial import.' );
     ll_assert( $s['execution']['posts']['d2']['status'] === 'complete' && $s['execution']['posts']['d1']['status'] === 'failed', 'Independent destination completes despite image failure.' );
+    ll_assert( in_array( 'core/heading', array_column( parse_blocks( get_post( $s['execution']['posts']['d2']['id'] )->post_content ), 'blockName' ), true ), 'Independent multi-story destination contains editable native headings.' );
     $completed = $s['execution']['posts']['d2']['id']; $created_posts[] = $completed;
     // Simulate an interrupted write after wp_insert_post but before the session checkpoint.
     $remote_mode = 'normal'; $retry = ll_request( 'sessions/' . $s['id'] . '/retry', array( 'revision' => $s['revision'] ) ); $s = $retry->get_data();
     $media_tick = ll_request( 'sessions/' . $s['id'] . '/tick', array( 'revision' => $s['revision'] ) ); $s = $media_tick->get_data();
-    $local_urls = array(); foreach ( $s['analysis']['images'] as $img ) { $local_urls[ $img['url'] ] = wp_get_attachment_url( $s['execution']['images'][ $img['id'] ]['id'] ); }
+    $local_urls = array(); foreach ( $s['analysis']['images'] as $img ) { $local_urls[ $img['url'] ] = array( 'url' => wp_get_attachment_url( $s['execution']['images'][ $img['id'] ]['id'] ), 'id' => (int) $s['execution']['images'][ $img['id'] ]['id'] ); }
     $reserved = wp_insert_post( wp_slash( array( 'post_title' => 'Recovered draft', 'post_status' => 'draft', 'guid' => 'urn:letterlift:' . $s['id'] . ':d1', 'post_content' => Letterlift_Plan::content( Letterlift_Plan::blocks( $s['analysis'], $s['plan'], 'd1' ), $local_urls ) ) ) ); $created_posts[] = $reserved;
     for ( $i = 0; $i < 12 && $s['status'] === 'importing'; $i++ ) { $tick = ll_request( 'sessions/' . $s['id'] . '/tick', array( 'revision' => $s['revision'] ) ); $s = $tick->get_data(); }
     foreach ( $s['execution']['images'] as $img ) { if ( $img['id'] ) { $created_media[] = $img['id']; } }
@@ -133,8 +138,23 @@ try {
     ll_assert( ! str_contains( $post->post_content, 'https://mcusercontent.com/' ), 'Native post uses managed local images.' );
     ll_assert( $n['execution']['images'] === $s['execution']['images'], 'Safe media attachment reused across imports.' );
     ll_assert( get_post_meta( $single_id, '_letterlift_source_url', true ) === 'https://mailchi.mp/letterlift-fixture', 'Private source attribution stored without modifying public content.' );
-    ll_assert( str_contains( $post->post_content, '<!-- wp:html -->' ), 'Content uses WordPress core blocks without plugin dependencies.' );
+    ll_assert( str_contains( $post->post_content, '<!-- wp:paragraph -->' ) && str_contains( $post->post_content, '<!-- wp:image ' ) && ! str_contains( $post->post_content, '<!-- wp:html -->' ), 'Ordinary content uses native WordPress blocks without plugin dependencies.' );
     ll_assert( get_post_thumbnail_id( $single_id ) === $created_media[0], 'Featured image independently assigned to its destination.' );
+    // Execute the richer native fixture through real WordPress INSERT/metadata APIs too.
+    $native_source = file_get_contents( __DIR__ . '/fixtures/native.html' );
+    $native_analysis = ( new Letterlift_Parser() )->analyze( $native_source, 'https://mailchi.mp/native-fixture' );
+    $native_plan = Letterlift_Plan::initial( $native_analysis ); $native_plan['acknowledged'] = array_column( $native_analysis['warnings'], 'id' );
+    $native_session = Letterlift_Store::create( array( 'url' => 'https://mailchi.mp/native-fixture', 'source_key' => Letterlift_Remote::identity( 'https://mailchi.mp/native-fixture' ), 'source' => $native_source, 'analysis' => $native_analysis, 'plan' => $native_plan, 'status' => 'ready', 'duplicates' => array() ) ); $sessions[] = $native_session['id'];
+    $native_session = Letterlift_Executor::begin( $native_session );
+    for ( $i = 0; $i < 12 && $native_session['status'] === 'importing'; $i++ ) { $native_session = Letterlift_Executor::tick( $native_session ); }
+    foreach ( $native_session['execution']['images'] as $image ) { if ( $image['id'] ) { $created_media[] = $image['id']; } }
+    if ( $native_session['execution']['posts']['single']['id'] ) { $created_posts[] = $native_session['execution']['posts']['single']['id']; }
+    ll_assert( $native_session['status'] === 'complete', 'Rich Mailchimp fixture creates a real draft with native and fallback blocks.' );
+    $native_post = get_post( $native_session['execution']['posts']['single']['id'] );
+    $native_types = array_column( parse_blocks( $native_post->post_content ), 'blockName' );
+    foreach ( array( 'core/paragraph', 'core/heading', 'core/image', 'core/list', 'core/quote', 'core/separator', 'core/table', 'core/buttons', 'core/html' ) as $type ) { ll_assert( in_array( $type, $native_types, true ), 'Created draft retains native/fallback block type ' . $type ); }
+    ll_assert( substr_count( $native_post->post_content, '<!-- wp:html -->' ) === 2 && str_contains( $native_post->post_content, '<figcaption class="wp-element-caption">' ), 'Only complex regions use HTML and image captions remain attached after INSERT.' );
+    $native_rendered_text = wp_strip_all_tags( do_blocks( $native_post->post_content ) );
     // Retention and lifecycle checks run only on this explicitly disposable site.
     $wpdb->update( Letterlift_Store::table(), array( 'updated' => '2000-01-01 00:00:00' ), array( 'id' => $s['id'] ) );
     $wpdb->update( Letterlift_Store::table(), array( 'updated' => '2000-01-01 00:00:00' ), array( 'id' => $n['id'] ) );
@@ -143,14 +163,19 @@ try {
     $after_cleanup_duplicate = ll_request( 'analyze', array( 'url' => 'https://mailchi.mp/letterlift-fixture' ) );
     ll_assert( $after_cleanup_duplicate->get_status() === 409 && $after_cleanup_duplicate->get_data()['duplicates'][0]['id'] === null, 'Permanent post attribution detects duplicates after temporary history cleanup.' );
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    $before_deactivation = wp_strip_all_tags( do_blocks( $post->post_content ) );
     deactivate_plugins( 'letterlift/letterlift.php', true );
     ll_assert( get_post( $single_id )->post_content === $post->post_content, 'Post remains intact while Letterlift is deactivated.' );
+    ll_assert( wp_strip_all_tags( do_blocks( get_post( $single_id )->post_content ) ) === $before_deactivation, 'Native blocks render the same editorial text while Letterlift is deactivated.' );
+    ll_assert( wp_strip_all_tags( do_blocks( get_post( $native_post->ID )->post_content ) ) === $native_rendered_text, 'Rich native images, captions, lists, and tables render after deactivation.' );
     $activated = activate_plugin( 'letterlift/letterlift.php', '', false, true );
     ll_assert( ! is_wp_error( $activated ), 'Plugin reactivates cleanly.' );
     define( 'WP_UNINSTALL_PLUGIN', 'letterlift/letterlift.php' );
     require dirname( __DIR__ ) . '/uninstall.php';
     ll_assert( get_post( $single_id ) && is_file( get_attached_file( $created_media[0] ) ), 'Uninstall preserves imported posts and media files.' );
+    ll_assert( wp_strip_all_tags( do_blocks( get_post( $single_id )->post_content ) ) === $before_deactivation, 'Core native block rendering survives Letterlift uninstall.' );
     ll_assert( get_option( 'letterlift_settings' ) === false, 'Uninstall removes plugin-owned settings.' );
+    ll_assert( wp_strip_all_tags( do_blocks( get_post( $native_post->ID )->post_content ) ) === $native_rendered_text, 'Rich native and fallback content render after uninstall.' );
     Letterlift_Store::install();
     echo "PASS: $assertions assertions on WordPress " . get_bloginfo( 'version' ) . "\n";
 } finally {

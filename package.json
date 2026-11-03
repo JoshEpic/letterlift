@@ -5,9 +5,11 @@
   "description": "Development checks for the Letterlift WordPress plugin",
   "scripts": {
     "test": "node --test tests/admin.test.cjs",
-    "check": "node --check assets/admin.js"
+    "check": "node --check assets/admin.js",
+    "test:gutenberg": "node --test tests/gutenberg.test.cjs"
   },
   "devDependencies": {
+    "jsdom": "26.1.0",
     "linkedom": "0.18.15"
   }
 }
