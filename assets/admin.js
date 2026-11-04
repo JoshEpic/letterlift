@@ -4,6 +4,26 @@
     const root = document.getElementById('letterlift');
     if (!root) return;
     const cfg = window.LetterliftConfig;
+    let menuRefreshPending = false;
+    function refreshAdminMenu() {
+        if (menuRefreshPending) return;
+        menuRefreshPending = true;
+        const notify = () => {
+            menuRefreshPending = false;
+            // WordPress caches page/menu heights for its scrollable pinned sidebar.
+            // Ask core to recalculate after our asynchronous view changes settle.
+            document.dispatchEvent(new window.Event('wp-pin-menu'));
+        };
+        if (window.requestAnimationFrame) window.requestAnimationFrame(notify);
+        else setTimeout(notify,0);
+    }
+    if (window.ResizeObserver) {
+        const layoutObserver = new window.ResizeObserver(refreshAdminMenu);
+        layoutObserver.observe(root);
+        const adminMenu = document.getElementById('adminmenuwrap');
+        if (adminMenu) layoutObserver.observe(adminMenu);
+    }
+
     let session = null, view = 'new', step = 'organize', history = [], settings = null;
     let busy = false, running = false, message = '', error = '', duplicate = null, url = '';
     let active = 'single', generation = 0, savedGeneration = 0, saveTimer, savePromise = null, historyPage = 1;
@@ -68,7 +88,7 @@
     function showError(e) { error = e.message; render(); document.getElementById('ll-errors')?.focus(); }
     function render() {
         const focusId = document.activeElement?.id;
-        root.innerHTML = `<header class="ll-header"><div><h1>Letterlift <span>Newsletter → WordPress</span></h1><p>Good stories deserve a second home.</p></div><span class="ll-version">${esc(cfg.version || '1.0.1')}</span></header>
+        root.innerHTML = `<header class="ll-header"><div><h1>Letterlift <span>Newsletter → WordPress</span></h1><p>Good stories deserve a second home.</p></div><span class="ll-version">${esc(cfg.version || '1.0.2')}</span></header>
         <nav class="nav-tab-wrapper" aria-label="Letterlift views">${[['new','New Import'],['history','Import History'],['settings','Settings']].map(([id,label]) => `<button class="nav-tab ${view === id ? 'nav-tab-active' : ''}" data-action="nav" data-view="${id}" ${busy ? 'disabled' : ''}>${label}</button>`).join('')}</nav>
         ${error ? `<div class="notice notice-error ll-notice" id="ll-errors" role="alert" tabindex="-1"><p>${esc(error)}</p><p>${button('Reload saved import','reload')} ${button('Dismiss','dismiss')}</p></div>` : ''}
         <p class="ll-status" id="ll-save-status" role="status" aria-live="polite">${esc(message)}</p>
@@ -77,6 +97,7 @@
         root.querySelectorAll('[data-field]').forEach(el => { if (!el.id) el.id = `ll-field-${el.dataset.field}-${el.dataset.id || (['radio','checkbox'].includes(el.type) ? el.value : 'default')}`; });
         if (busy) root.querySelectorAll('input,select,textarea').forEach(el => { el.disabled = true; });
         if (focusId) document.getElementById(focusId)?.focus({preventScroll:true});
+        refreshAdminMenu();
     }
     function startView() {
         const unfinished = history.filter(s => !['complete'].includes(s.status)).slice(0,3);

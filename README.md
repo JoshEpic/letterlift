@@ -6,7 +6,7 @@ A self-contained WordPress plugin for converting public Mailchimp newsletters in
 
 Requires WordPress 6.6+, PHP 8.1+, the PHP DOM extension, and WordPress-supported image processing. No Node.js, Composer, API key, account, or cloud service is needed on the WordPress server.
 
-1. Run `python3 scripts/package.py` to generate `dist/letterlift-1.0.1.zip`, or copy this directory to `wp-content/plugins/letterlift`.
+1. Run `python3 scripts/package.py` to generate `dist/letterlift-1.0.2.zip`, or copy this directory to `wp-content/plugins/letterlift`.
 2. Activate **Letterlift** in WordPress.
 3. Open **Tools → Letterlift**, paste a public Mailchimp campaign URL, and choose **Analyze Newsletter**.
 4. Select sections or expand individual blocks. In Multiple Posts mode, assign selected content to destination drafts. Removing a destination retains its content as unassigned.
@@ -72,3 +72,10 @@ See [manual acceptance](docs/acceptance.md) and the supplied [product specificat
 Fixes old Mailchimp campaigns whose `<center>` wrapper, or inline wrappers enclosing block elements, previously bundled the newsletter into one normalized block. Wrapper traversal now preserves individual paragraphs, headings, images, and reading order. Template comments no longer become visible delimiter artifacts. Empty image-link titles are normalized so ordinary images use native Image blocks.
 
 After installing 1.0.1, analyze an affected URL again. Choose a deliberate separate import when the duplicate-source prompt appears; resuming an older saved analysis retains its original extracted blocks. Existing drafts and approved executions are not rewritten.
+
+
+## Version 1.0.2: admin menu scrolling
+
+Letterlift now notifies WordPress to recalculate its admin menu position after a view renders and when the workspace/menu dimensions change. This releases a tall sidebar from stale pinning when navigating from a long import workspace to a shorter screen. It uses WordPress's existing menu behavior rather than replacing its scrolling or responsive controls.
+
+A regression check runs the installed WordPress menu JavaScript against supplied long/short page dimensions. On a disposable WordPress checkout, run `LETTERLIFT_WORDPRESS_PATH=/path/to/wordpress npm run test:admin-layout`. This checks core menu state transitions; it does not replace a visual browser layout test.

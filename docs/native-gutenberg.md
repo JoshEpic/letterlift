@@ -36,7 +36,7 @@ A focused parser correction prevents nested data tables from turning an enclosin
 | `tests/admin.test.cjs` | Retains organizer tests and verifies that previews consume server output and display fallback warnings. |
 | `package.json`, `package-lock.json` | Locked development-only jsdom dependency and explicit Gutenberg validation command. |
 | `README.md`, `readme.txt`, `docs/specification.md`, `docs/acceptance.md`, this report | Updated behavior, compatibility, verification, and release gate. |
-| `dist/letterlift-1.0.1.zip` | Rebuilt installable runtime package; development dependencies/tests are excluded. |
+| `dist/letterlift-1.0.2.zip` | Rebuilt installable runtime package; development dependencies/tests are excluded. |
 
 ## Supported native content
 

@@ -4,7 +4,7 @@ Tags: newsletter, mailchimp, importer, drafts
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -43,6 +43,9 @@ No. All created posts have draft status.
 Resume from Import History. Completed operations are reused; failed destinations can be retried independently.
 
 == Changelog ==
+= 1.0.2 =
+Fix WordPress admin menu scrolling after Letterlift changes views or its content height changes. Refresh WordPress menu measurements after rendering and layout changes so a tall menu does not remain pinned using stale page dimensions.
+
 = 1.0.1 =
 Fix legacy centered newsletter wrappers being bundled into a single content block. Traverse nested structural wrappers, preserve inline phrasing, omit non-editorial template comments, and normalize empty image-link titles. Existing saved analyses and approved executions remain unchanged.
 
